@@ -1,0 +1,389 @@
+﻿<!DOCTYPE html>
+<html lang="de">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>FamilyTask Ultimate 8</title>
+    <link rel="manifest" href="manifest.json">
+    <style>
+        body {
+            margin: 0;
+            font-family: Arial;
+            background: #f2f4f8;
+        }
+
+        .container {
+            padding: 20px;
+            padding-bottom: 120px;
+            max-width: 900px;
+            margin: auto;
+        }
+
+        input, select, button {
+            width: 100%;
+            padding: 10px;
+            margin: 5px 0;
+            border-radius: 8px;
+        }
+
+        button {
+            background: #4e73df;
+            color: white;
+            border: none;
+            cursor: pointer;
+            font-weight: bold;
+            transition: 0.2s;
+        }
+
+            button:hover {
+                opacity: 0.85;
+            }
+
+        .hidden {
+            display: none;
+        }
+
+        .card {
+            background: white;
+            padding: 15px;
+            margin: 10px 0;
+            border-radius: 12px;
+            box-shadow: 0 5px 15px rgba(0,0,0,0.1);
+            transition: 0.3s;
+        }
+
+            .card:hover {
+                transform: translateY(-3px);
+                box-shadow: 0 8px 20px rgba(0,0,0,0.15);
+            }
+
+        .progress {
+            height: 12px;
+            background: #ddd;
+            border-radius: 12px;
+            margin: 8px 0;
+        }
+
+        .progress-fill {
+            height: 100%;
+            background: #1cc88a;
+            border-radius: 12px;
+            transition: 0.5s;
+        }
+
+        .navbar {
+            position: fixed;
+            bottom: 0;
+            left: 0;
+            right: 0;
+            background: white;
+            display: flex;
+            justify-content: space-around;
+            padding: 10px;
+            box-shadow: 0 -3px 15px rgba(0,0,0,0.2);
+        }
+
+            .navbar button {
+                width: auto;
+                background: none;
+                color: black;
+                font-weight: bold;
+            }
+
+        .task {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin: 5px 0;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+
+        <!-- START -->
+        <div id="startPage">
+            <h2>FamilyTask</h2>
+            <button onclick="showSetup()">Neue Familie erstellen</button>
+            <button onclick="showJoin()">Familie beitreten</button>
+        </div>
+
+        <!-- SETUP -->
+        <div id="setupPage" class="hidden">
+            <h2>Neue Familie erstellen</h2>
+            <input id="opName" placeholder="Operator Name (optional)">
+            <input id="opPass" type="password" placeholder="Operator Passwort">
+            <input id="familyCode" placeholder="Familien-Code (z.B. ABC123)">
+            <button onclick="createFamily()">Familie erstellen</button>
+            <button onclick="backToStart()">Zurück</button>
+        </div>
+
+        <!-- JOIN -->
+        <div id="joinPage" class="hidden">
+            <h2>Familie beitreten</h2>
+            <input id="joinCode" placeholder="Familien-Code">
+            <button onclick="joinFamily()">Beitreten</button>
+            <button onclick="backToStart()">Zurück</button>
+        </div>
+
+        <!-- LOGIN -->
+        <div id="loginPage" class="hidden">
+            <h2>Login</h2>
+            <select id="roleSelect">
+                <option value="operator">Operator</option>
+                <option value="parent">Eltern</option>
+                <option value="child">Kind</option>
+            </select>
+            <select id="userSelect"></select>
+            <input id="loginPass" type="password" placeholder="Passwort">
+            <button onclick="login()">Einloggen</button>
+        </div>
+
+        <!-- APP -->
+        <div id="app" class="hidden">
+            <div id="dashboardPage"></div>
+            <div id="tasksPage" class="hidden"></div>
+            <div id="rankingPage" class="hidden"></div>
+            <div id="rewardsPage" class="hidden"></div>
+            <div id="settingsPage" class="hidden"></div>
+            <div class="navbar">
+                <button>🏠</button>
+                <button>📝</button>
+                <button>🏆</button>
+                <button>🎁</button>
+                <button>⚙️</button>
+            </div>
+        </div>
+
+        <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+        <script>
+            // --- Datenstruktur pro Familie ---
+            let families = JSON.parse(localStorage.getItem("familiesV8")) || {};
+            let currentFamilyCode = null;
+            let data = null;
+            let currentUser = null;
+            let currentRole = null;
+
+            // --- Speicher ---
+            function save() { families[currentFamilyCode] = data; localStorage.setItem("familiesV8", JSON.stringify(families)); }
+
+            // --- Wochenreset ---
+            function checkWeeklyReset() {
+                const now = new Date();
+                const lastReset = new Date(data.lastReset || 0);
+                if (!data.lastReset || lastReset.getWeekNumber() < now.getWeekNumber()) {
+                    data.tasks = data.tasks.filter(t => !t.done);
+                    data.lastReset = now.toISOString();
+                    save();
+                }
+            }
+            Date.prototype.getWeekNumber = function () {
+                const d = new Date(Date.UTC(this.getFullYear(), this.getMonth(), this.getDate()));
+                const dayNum = d.getUTCDay() || 7;
+                d.setUTCDate(d.getUTCDate() + 4 - dayNum);
+                const yearStart = new Date(Date.UTC(d.getUTCFullYear(), 0, 1));
+                return Math.ceil((((d - yearStart) / 86400000) + 1) / 7)
+            }
+
+            // --- Navigation Start ---
+            function showSetup() { startPage.classList.add("hidden"); setupPage.classList.remove("hidden"); }
+            function showJoin() { startPage.classList.add("hidden"); joinPage.classList.remove("hidden"); }
+            function backToStart() { setupPage.classList.add("hidden"); joinPage.classList.add("hidden"); startPage.classList.remove("hidden"); }
+
+            // --- Familie erstellen ---
+            function createFamily() {
+                const fCode = familyCode.value.trim();
+                if (!fCode) return alert("Familien-Code angeben");
+                if (families[fCode]) return alert("Familie existiert bereits");
+                const opNameV = opName.value.trim();
+                const opPassV = opPass.value.trim();
+                let operator = null;
+                if (opNameV && opPassV) operator = { name: opNameV, pass: opPassV };
+                families[fCode] = { operator: operator, parents: [], children: [], tasks: [], rewards: [], lastReset: null };
+                localStorage.setItem("familiesV8", JSON.stringify(families));
+                alert("Familie erstellt!");
+                currentFamilyCode = fCode; data = families[fCode];
+                initLogin();
+            }
+
+            // --- Familie beitreten ---
+            function joinFamily() {
+                const code = joinCode.value.trim();
+                if (!families[code]) return alert("Familie nicht gefunden");
+                currentFamilyCode = code;
+                data = families[code];
+                initLogin();
+            }
+
+            // --- Login ---
+            function initLogin() { setupPage.classList.add("hidden"); joinPage.classList.add("hidden"); startPage.classList.add("hidden"); loginPage.classList.remove("hidden"); updateUsers(); checkWeeklyReset(); }
+
+            function updateUsers() {
+                const role = roleSelect.value;
+                userSelect.innerHTML = "";
+                if (role === "operator" && data.operator) userSelect.innerHTML = `<option>${data.operator.name}</option>`;
+                if (role === "parent") data.parents.forEach(p => userSelect.innerHTML += `<option>${p.name}</option>`);
+                if (role === "child") data.children.forEach(c => userSelect.innerHTML += `<option>${c.name}</option>`);
+            }
+            roleSelect.onchange = updateUsers;
+
+            function login() {
+                const role = roleSelect.value;
+                const user = userSelect.value;
+                const pass = loginPass.value;
+                if (role === "operator") { if (!data.operator || pass !== data.operator.pass) return alert("Falsches Passwort"); }
+                if (role === "parent") { const p = data.parents.find(x => x.name === user); if (!p || p.pass !== pass) return alert("Falsches Passwort"); }
+                if (role === "child") { const c = data.children.find(x => x.name === user); if (!c || c.pass !== pass) return alert("Falsches Passwort"); }
+                currentUser = user; currentRole = role;
+                loginPage.classList.add("hidden"); app.classList.remove("hidden");
+                renderAll();
+            }
+
+            function logout() { currentUser = null; currentRole = null; app.classList.add("hidden"); loginPage.classList.remove("hidden"); }
+
+            // --- Navigation App ---
+            function showPage(page) {
+                ['dashboardPage', 'tasksPage', 'rankingPage', 'rewardsPage', 'settingsPage'].forEach(p => document.getElementById(p).classList.add("hidden"));
+                document.getElementById(page + 'Page').classList.remove("hidden");
+            }
+
+            document.querySelectorAll(".navbar button").forEach(btn => {
+                btn.addEventListener("click", e => {
+                    const page = e.target.textContent === "🏠" ? "dashboard" :
+                        e.target.textContent === "📝" ? "tasks" :
+                            e.target.textContent === "🏆" ? "ranking" :
+                                e.target.textContent === "🎁" ? "rewards" : "settings";
+                    showPage(page);
+                    renderAll();
+                });
+            });
+
+            // --- Level ---
+            function getLevel(points) {
+                if (points >= 200) return "💎 Diamant";
+                if (points >= 150) return "🏆 Platin";
+                if (points >= 100) return "🥇 Gold";
+                if (points >= 50) return "🥈 Silber";
+                return "🥉 Bronze";
+            }
+
+            // --- Render Funktionen ---
+            function renderDashboard() {
+                dashboardPage.innerHTML = `<div class="card"><h3>Willkommen ${currentUser} (${currentRole})</h3><button onclick="logout()">Logout</button></div>`;
+            }
+
+            function renderTasks() {
+                let html = '';
+                if (currentRole === "parent") {
+                    html += `<div class="card">
+                        <input id="taskText" placeholder="Aufgabe">
+                        <select id="assignTo"><option value="alle">Alle Kinder</option></select>
+                        <input id="points" type="number" placeholder="Punkte">
+                        <button onclick="addTask()">Hinzufügen</button></div>`;
+                }
+                data.children.forEach(child => {
+                    const tasks = data.tasks.filter(t => t.child === child.name || t.child === "alle");
+                    html += `<div class="card"><h4>${child.name} (${child.points || 0}P - ${getLevel(child.points || 0)})</h4>`;
+                    tasks.forEach((task, i) => {
+                        if (currentRole === "parent") {
+                            html += `<div class="task">${task.text} (${task.points}P)
+                                <input type="checkbox" ${task.done ? "checked" : ""} onclick="toggleTask(${i})">
+                                <button onclick="deleteTask(${i})">Löschen</button></div>`;
+                        } else if (currentRole === "child" && currentUser === child.name) {
+                            html += `<div class="task">${task.text} ${task.done ? "✅" : "❌"}</div>`;
+                        }
+                    });
+                    html += `</div>`;
+                });
+                tasksPage.innerHTML = html;
+                if (currentRole === "parent") {
+                    const sel = document.getElementById("assignTo");
+                    sel.innerHTML = "<option value='alle'>Alle Kinder</option>";
+                    data.children.forEach(c => sel.innerHTML += `<option>${c.name}</option>`);
+                }
+            }
+
+            function toggleTask(i) {
+                if (currentRole !== "parent") return;
+                const task = data.tasks[i];
+                task.done = !task.done;
+                if (task.child !== "alle") {
+                    const c = data.children.find(x => x.name === task.child);
+                    if (task.done) c.points = (c.points || 0) + task.points;
+                    else c.points -= task.points;
+                } else {
+                    data.children.forEach(c => {
+                        if (task.done) c.points = (c.points || 0) + task.points;
+                        else c.points -= task.points;
+                    });
+                }
+                save(); renderAll();
+            }
+
+            function deleteTask(i) { if (currentRole !== "parent") return; data.tasks.splice(i, 1); save(); renderAll(); }
+            function addTask() { const txt = document.getElementById("taskText").value; const pts = Number(document.getElementById("points").value); const assign = document.getElementById("assignTo").value; if (!txt || !pts) return; data.tasks.push({ text: txt, points: pts, child: assign, done: false }); save(); renderAll(); }
+
+            function renderRanking() {
+                const sorted = [...data.children].sort((a, b) => (b.points || 0) - (a.points || 0));
+                rankingPage.innerHTML = '';
+                sorted.forEach((c, i) => rankingPage.innerHTML += `<div class="card">${i + 1}. ${c.name} - ${c.points || 0}P - ${getLevel(c.points || 0)}</div>`);
+            }
+
+            function renderRewards() {
+                let html = '';
+                data.children.forEach(c => {
+                    const unlocked = data.rewards.filter(r => c.points >= r.points);
+                    html += `<div class="card"><h4>${c.name} Belohnungen:</h4>`;
+                    if (unlocked.length === 0) html += "Keine freigeschalteten Belohnungen.";
+                    else unlocked.forEach(r => html += `<div>🎁 ${r.text} (${r.points}P)</div>`);
+                    html += `</div>`;
+                });
+                if (currentRole === "parent") {
+                    html += `<div class="card">
+                            <input id="rewardText" placeholder="Belohnung">
+                            <input id="rewardPoints" type="number" placeholder="Punkte">
+                            <button onclick="addReward()">Hinzufügen</button>
+                        </div>`;
+                }
+                rewardsPage.innerHTML = html;
+            }
+
+            function addReward() { const t = document.getElementById("rewardText").value; const p = Number(document.getElementById("rewardPoints").value); if (!t || !p) return; data.rewards.push({ text: t, points: p }); save(); renderAll(); }
+
+            function renderSettings() {
+                if (currentRole !== "operator") { settingsPage.innerHTML = "<div class='card'>Keine Einstellungen verfügbar</div>"; return; }
+                let html = `<div class="card">
+                    <h4>Eltern hinzufügen</h4>
+                    <input id="parentName" placeholder="Name">
+                    <input id="parentPass" type="password" placeholder="Passwort">
+                    <button onclick="addParent()">Hinzufügen</button>
+
+                    <h4>Kind hinzufügen</h4>
+                    <input id="childName" placeholder="Name">
+                    <input id="childPass" type="password" placeholder="Passwort">
+                    <button onclick="addChild()">Hinzufügen</button>
+
+                    <h4>Mitglieder löschen</h4>
+                    <select id="deleteUserSelect"></select>
+                    <button onclick="deleteMember()">Löschen</button>
+                    </div>`;
+                settingsPage.innerHTML = html;
+
+                const sel = document.getElementById("deleteUserSelect");
+                sel.innerHTML = "";
+                if (data.operator) sel.innerHTML += `<option value="operator">${data.operator.name} (Operator)</option>`;
+                data.parents.forEach(p => sel.innerHTML += `<option value="parent-${p.name}">${p.name} (Eltern)</option>`);
+                data.children.forEach(c => sel.innerHTML += `<option value="child-${c.name}">${c.name} (Kind)</option>`);
+            }
+
+            function addParent() { const n = document.getElementById("parentName").value; const p = document.getElementById("parentPass").value; if (!n || !p) return; data.parents.push({ name: n, pass: p }); save(); renderAll(); }
+            function addChild() { const n = document.getElementById("childName").value; const p = document.getElementById("childPass").value; if (!n || !p) return; data.children.push({ name: n, pass: p, points: 0 }); save(); renderAll(); }
+            function deleteMember() { const sel = document.getElementById("deleteUserSelect"); const val = sel.value; if (val === "operator") data.operator = null; if (val.startsWith("parent-")) data.parents = data.parents.filter(p => p.name !== val.split("-")[1]); if (val.startsWith("child-")) data.children = data.children.filter(c => c.name !== val.split("-")[1]); save(); renderAll(); }
+
+            function renderAll() { renderDashboard(); renderTasks(); renderRanking(); renderRewards(); renderSettings(); }
+
+            // --- PWA Service Worker ---
+            if ('serviceWorker' in navigator) { navigator.serviceWorker.register('sw.js').then(() => console.log("Service Worker registriert")).catch(console.error); }
+        </script>
+</body>
+</html>

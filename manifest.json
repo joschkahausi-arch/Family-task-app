@@ -1,0 +1,20 @@
+﻿{
+  "name": "FamilyTask",
+  "short_name": "FamilyTask",
+  "start_url": "familytask.html",
+  "display": "standalone",
+  "background_color": "#f2f4f8",
+  "theme_color": "#4e73df",
+  "icons": [
+    {
+      "src": "icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png"
+    },
+    {
+      "src": "icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png"
+    }
+  ]
+}
